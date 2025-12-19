@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Toprak Kort: Penaltı Efsanesi</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel (JSX Derleyicisi) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0f172a; touch-action: none; }
+        .no-select { user-select: none; -webkit-user-select: none; }
+        /* Mobilde basılı tutunca çıkan menüleri engelle */
+        * { -webkit-tap-highlight-color: transparent; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- İKONLAR (Inline SVG) ---
+        const IconBase = ({ children, className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                {children}
+            </svg>
+        );
+        const Trophy = (p) => <IconBase {...p}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></IconBase>;
+        const Play = (p) => <IconBase {...p}><polygon points="5 3 19 12 5 21 5 3"/></IconBase>;
+        const ShoppingBag = (p) => <IconBase {...p}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></IconBase>;
+        const Coins = (p) => <IconBase {...p}><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></IconBase>;
+        const Shield = (p) => <IconBase {...p}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></IconBase>;
+        const Award = (p) => <IconBase {...p}><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></IconBase>;
+        const HelpCircle = (p) => <IconBase {...p}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></IconBase>;
+        const Check = (p) => <IconBase {...p}><polyline points="20 6 9 17 4 12"/></IconBase>;
+        const Lock = (p) => <IconBase {...p}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></IconBase>;
+        const XIcon = (p) => <IconBase {...p}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></IconBase>;
+        const ChevronRight = (p) => <IconBase {...p}><path d="m9 18 6-6-6-6"/></IconBase>;
+
+        const ClayCourtSimulation = () => {
+            // --- OYUN DURUMLARI (STATE) ---
+            const [gameState, setGameState] = useState('menu'); 
+            const [money, setMoney] = useState(500); 
+            const [currentRound, setCurrentRound] = useState(0);
+            
+            // Takım Ayarları
+            const [playerSettings, setPlayerSettings] = useState({ name: 'Yıldızlar FC', color: '#00ff00', colorHex: 0x00ff00 });
+
+            // Şampiyonluk Kontrolü
+            const [championStep, setChampionStep] = useState('ask');
+
+            // Takımlar
+            const teams = [
+                { id: 1, name: 'Güntur Salzburg', color: '#DC143C', difficulty: 1, reward: 500 },
+                { id: 2, name: 'Cosa Nostra', color: '#000000', difficulty: 2, reward: 1000 },
+                { id: 3, name: 'Kule Yiğit', color: '#4B0082', difficulty: 3, reward: 2500 }
+            ];
+
+            // Market & Envanter
+            const [inventory, setInventory] = useState(['basic']);
+            const [equippedBoot, setEquippedBoot] = useState('basic');
+            
+            const boots = [
+                { id: 'basic', name: 'Standart Krampon', price: 0, color: null, power: 1, curve: 1 },
+                { id: 'speed', name: 'Alev Vuruşu', price: 750, color: 0xFF4500, power: 1.2, curve: 0.8 },
+                { id: 'gold', name: 'Altın Ayak', price: 2000, color: 0xFFD700, power: 1.1, curve: 1.5 },
+                { id: 'neon', name: 'Cyber Şutör', price: 5000, color: 0x00FFFF, power: 1.5, curve: 1.2 },
+            ];
+
+            // Simülasyon Durumu
+            const [simLogs, setSimLogs] = useState([]);
+            const [isSimFinished, setIsSimFinished] = useState(false);
+            const [simScore, setSimScore] = useState({p: 0, c: 0});
+
+            // Penaltı Durumu
+            const [scores, setScores] = useState({ player: 0, cpu: 0 });
+            const [shotCount, setShotCount] = useState(1);
+            const [turn, setTurn] = useState('player');
+            const [message, setMessage] = useState('');
+            
+            // Aim Mekaniği State'leri
+            const [aimPos, setAimPos] = useState({ x: 50, y: 50 });
+            const [power, setPower] = useState(0);
+            const [isCharging, setIsCharging] = useState(false);
+            const [canInteract, setCanInteract] = useState(false);
+            
+            const sceneRef = useRef(null);
+            const gameRef = useRef({}); 
+
+            const handleSetupComplete = (e) => {
+                e.preventDefault();
+                const name = e.target.teamName.value || 'Yıldızlar FC';
+                const color = e.target.teamColor.value;
+                const colorHex = parseInt(color.replace('#', '0x'), 16);
+                setPlayerSettings({ name, color, colorHex });
+                startSimulation(0);
+            };
+
+            const startSimulation = (roundIndex) => {
+                setGameState('simulation');
+                setSimLogs([]);
+                setIsSimFinished(false);
+                setSimScore({p: 0, c: 0});
+                
+                const rIdx = typeof roundIndex === 'number' ? roundIndex : currentRound;
+                const opponentName = teams[rIdx].name;
+                const myName = playerSettings.name;
+                
+                const events = [
+                    { time: '1\'', text: 'Maç başladı! Hava güneşli.' },
+                    { time: '14\'', text: `${opponentName} tehlikeli geliyor...`, score: null },
+                    { time: '23\'', text: `GOL! ${opponentName} öne geçti.`, score: {p:0, c:1} },
+                    { time: '35\'', text: `${myName} serbest vuruş kullanıyor. Direkten döndü!` },
+                    { time: '44\'', text: `GOOOL! ${myName} eşitliği sağladı!`, score: {p:1, c:1} },
+                    { time: 'DEVRE', text: 'İlk yarı sonucu: 1-1' },
+                    { time: '55\'', text: 'Orta sahada kıran kırana mücadele...' },
+                    { time: '67\'', text: `İnanılmaz bir hata! ${opponentName} golü buldu.`, score: {p:1, c:2} },
+                    { time: '82\'', text: `${myName} tüm hatlarıyla saldırıyor!` },
+                    { time: '90+2\'', text: `PENALTI! Hakem beyaz noktayı gösterdi!` },
+                    { time: '90+3\'', text: `GOOOL! ${myName} maçı uzatmalara götürüyor!`, score: {p:2, c:2} },
+                    { time: 'SON', text: 'Maç Sonucu: 2-2. Penaltı atışlarına geçiliyor.' }
+                ];
+
+                let currentEventIndex = 0;
+                const interval = setInterval(() => {
+                    if (currentEventIndex >= events.length) {
+                        clearInterval(interval);
+                        setIsSimFinished(true);
+                        return;
+                    }
+                    const event = events[currentEventIndex];
+                    setSimLogs(prev => [...prev, event]);
+                    if(event.score) setSimScore(event.score);
+                    
+                    const logContainer = document.getElementById('sim-logs');
+                    if(logContainer) logContainer.scrollTop = logContainer.scrollHeight;
+
+                    currentEventIndex++;
+                }, 800); 
+            };
+
+            const startPenalties = () => {
+                setGameState('penalty');
+                setScores({ player: 0, cpu: 0 });
+                setShotCount(1);
+                setTurn('player');
+                setCanInteract(true);
+                setMessage('');
+                
+                if (gameRef.current.resetScene) gameRef.current.resetScene();
+                
+                const bootData = boots.find(b => b.id === equippedBoot);
+                const color = bootData.color !== null ? bootData.color : playerSettings.colorHex;
+                if(gameRef.current.updateBootColor) gameRef.current.updateBootColor(color);
+            };
+
+            const buyBoot = (item) => {
+                if (money >= item.price && !inventory.includes(item.id)) {
+                    setMoney(m => m - item.price);
+                    setInventory([...inventory, item.id]);
+                }
+            };
+            const equipBoot = (id) => { setEquippedBoot(id); };
+
+            // --- INPUT HANDLERS (Mobil & Desktop) ---
+            const updateAim = (clientX, clientY) => {
+                if (!canInteract || turn !== 'player') return;
+                const rect = sceneRef.current.getBoundingClientRect(); // Canvas'ı referans al
+                const x = ((clientX - rect.left) / rect.width) * 100;
+                const y = ((clientY - rect.top) / rect.height) * 100;
+                
+                const limitedX = Math.max(35, Math.min(65, x));
+                const limitedY = Math.max(10, Math.min(60, y));
+                setAimPos({ x: limitedX, y: limitedY });
+            };
+
+            const handleInteractStart = (e) => {
+                if (!canInteract || turn !== 'player') return;
+                // Mobilde sayfa kaydırmayı engelle
+                // e.preventDefault(); // React synthetic event için passive uyarısı verebilir
+                setIsCharging(true);
+                setPower(0);
+                
+                // İlk pozisyonu ayarla
+                let clientX, clientY;
+                if (e.touches) {
+                    clientX = e.touches[0].clientX;
+                    clientY = e.touches[0].clientY;
+                } else {
+                    clientX = e.clientX;
+                    clientY = e.clientY;
+                }
+                updateAim(clientX, clientY);
+            };
+
+            const handleInteractMove = (e) => {
+                if (!isCharging) return;
+                let clientX, clientY;
+                if (e.touches) {
+                    clientX = e.touches[0].clientX;
+                    clientY = e.touches[0].clientY;
+                } else {
+                    clientX = e.clientX;
+                    clientY = e.clientY;
+                }
+                updateAim(clientX, clientY);
+            };
+
+            const handleInteractEnd = () => {
+                if (!canInteract || turn !== 'player' || !isCharging) return;
+                setIsCharging(false);
+                setCanInteract(false);
+                
+                const bootStats = boots.find(b => b.id === equippedBoot);
+                const finalPower = Math.min(100, power) * bootStats.power;
+                
+                const targetX = ((aimPos.x - 50) / 15) * 2;
+                const targetY = ((60 - aimPos.y) / 50) * 3;
+
+                gameRef.current.shootBall(targetX, targetY, finalPower, 'player', handleShotResult);
+            };
+
+            useEffect(() => {
+                let interval;
+                if (isCharging) {
+                    interval = setInterval(() => {
+                        setPower(p => {
+                            if (p >= 100) return 100;
+                            return p + 4;
+                        });
+                    }, 20);
+                }
+                return () => clearInterval(interval);
+            }, [isCharging]);
+
+            useEffect(() => {
+                if (gameState === 'penalty' && turn === 'cpu') {
+                    setCanInteract(false);
+                    setTimeout(() => {
+                        const difficulty = teams[currentRound].difficulty;
+                        const safeZone = 0.6;
+                        const randX = (Math.random() - 0.5) * (safeZone * 2); 
+                        const randY = Math.random() * 2 + 0.2; 
+                        
+                        let missChance = 0.3 - (difficulty * 0.08);
+                        let finalX = randX;
+                        if (Math.random() < missChance) finalX = 2.5;
+
+                        gameRef.current.shootBall(finalX, randY, 70, 'cpu', handleShotResult);
+                    }, 1500);
+                }
+            }, [turn, gameState]);
+
+            const handleShotResult = (result, shooter) => {
+                let msg = '';
+                let moneyEarned = 0;
+                let newScores = { ...scores };
+
+                if (result === 'goal') {
+                    msg = 'GOL!';
+                    if (shooter === 'player') {
+                        newScores.player += 1;
+                        moneyEarned = 50;
+                    } else {
+                        newScores.cpu += 1;
+                    }
+                } else if (result === 'bounce_fail') {
+                    msg = 'HATALI SEKME!';
+                } else {
+                    msg = 'Yuhh top harabelere gitti'; 
+                }
+                
+                setScores(newScores);
+                setMessage(msg);
+                if (moneyEarned > 0) setMoney(m => m + moneyEarned);
+
+                setTimeout(() => {
+                    setMessage('');
+                    if (shooter === 'player') {
+                        setTurn('cpu');
+                        gameRef.current.resetScene();
+                    } else {
+                        const isTie = newScores.player === newScores.cpu;
+                        
+                        if (shotCount >= 5 && !isTie) {
+                            endMatch(newScores);
+                        } else {
+                            if (shotCount >= 5 && isTie) {
+                                setMessage("UZATMA!");
+                                setTimeout(() => setMessage(''), 2000);
+                            }
+                            
+                            setShotCount(c => c + 1);
+                            setTurn('player');
+                            setCanInteract(true);
+                            setPower(0);
+                            gameRef.current.resetScene();
+                        }
+                    }
+                }, 2000);
+            };
+
+            const endMatch = (finalScores) => {
+                const s = finalScores || scores;
+                if (s.player > s.cpu) {
+                    setGameState('result_win');
+                } else {
+                    setGameState('result_loss');
+                }
+            };
+
+            const handleNextStage = () => {
+                setMoney(m => m + teams[currentRound].reward);
+                if (currentRound < teams.length - 1) {
+                    const nextRound = currentRound + 1;
+                    setCurrentRound(nextRound);
+                    startSimulation(nextRound);
+                } else {
+                    setGameState('champion');
+                }
+            };
+
+            // --- THREE.JS ---
+            useEffect(() => {
+                const container = sceneRef.current;
+                if (!container) return;
+
+                const scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x87CEEB);
+                scene.fog = new THREE.Fog(0x87CEEB, 20, 60);
+
+                const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 100);
+                camera.position.set(0, 1.7, 10);
+                camera.lookAt(0, 0.5, 0);
+
+                const renderer = new THREE.WebGLRenderer({ antialias: true });
+                renderer.setSize(container.clientWidth, container.clientHeight);
+                renderer.shadowMap.enabled = true;
+                container.innerHTML = '';
+                container.appendChild(renderer.domElement);
+
+                const hemiLight = new THREE.HemisphereLight(0xffffff, 0x8B4513, 0.6);
+                scene.add(hemiLight);
+                const dirLight = new THREE.DirectionalLight(0xfffaed, 0.8);
+                dirLight.position.set(-10, 20, 10);
+                dirLight.castShadow = true;
+                scene.add(dirLight);
+
+                const createClayTexture = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 512; canvas.height = 512;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#A0522D'; ctx.fillRect(0,0,512,512);
+                    for(let i=0; i<100000; i++) {
+                        ctx.fillStyle = Math.random() > 0.5 ? '#8B4513' : '#CD853F'; 
+                        ctx.globalAlpha = 0.15;
+                        const size = Math.random() * 2 + 1;
+                        ctx.fillRect(Math.random()*512, Math.random()*512, size, size);
+                    }
+                    const tex = new THREE.CanvasTexture(canvas);
+                    tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
+                    tex.repeat.set(8, 8);
+                    return tex;
+                };
+                const groundGeo = new THREE.PlaneGeometry(60, 60);
+                const groundMat = new THREE.MeshStandardMaterial({ map: createClayTexture(), roughness: 0.9 });
+                const ground = new THREE.Mesh(groundGeo, groundMat);
+                ground.rotation.x = -Math.PI / 2;
+                ground.receiveShadow = true;
+                scene.add(ground);
+
+                const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff, opacity: 0.8, transparent: true });
+                const createLine = (w, h, x, z) => {
+                    const line = new THREE.Mesh(new THREE.PlaneGeometry(w, h), lineMat);
+                    line.rotation.x = -Math.PI / 2; line.position.set(x, 0.02, z); scene.add(line);
+                };
+                createLine(40, 0.2, 0, 0); 
+                createLine(0.4, 0.4, 0, 7);
+
+                const zoneWidth = 2.0; const zoneDepth = 2.5;
+                const bounceZoneGeo = new THREE.PlaneGeometry(zoneWidth, zoneDepth);
+                const bounceZoneMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2, side: THREE.DoubleSide });
+                const bounceZone = new THREE.Mesh(bounceZoneGeo, bounceZoneMat);
+                bounceZone.rotation.x = -Math.PI / 2; bounceZone.position.set(0, 0.03, zoneDepth/2);
+                scene.add(bounceZone);
+                
+                const fenceGeo = new THREE.PlaneGeometry(50, 8);
+                const createFenceTexture = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 64; canvas.height = 64;
+                    const ctx = canvas.getContext('2d');
+                    ctx.strokeStyle = '#333'; ctx.lineWidth = 2; ctx.beginPath();
+                    ctx.moveTo(0,0); ctx.lineTo(64,64); ctx.moveTo(64,0); ctx.lineTo(0,64); ctx.stroke();
+                    const tex = new THREE.CanvasTexture(canvas);
+                    tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(50, 8);
+                    return tex;
+                };
+                const fenceMat = new THREE.MeshBasicMaterial({ map: createFenceTexture(), transparent: true, side: THREE.DoubleSide });
+                const fence = new THREE.Mesh(fenceGeo, fenceMat);
+                fence.position.set(0, 4, -5);
+                scene.add(fence);
+                
+                const crowdGroup = new THREE.Group();
+                const fanColors = [0xe74c3c, 0x3498db, 0xf1c40f, 0x9b59b6, 0xffffff];
+                const skinColor = 0xffccaa;
+                const createFan = (color) => {
+                    const group = new THREE.Group();
+                    const shirtMat = new THREE.MeshLambertMaterial({ color: color });
+                    const skinMat = new THREE.MeshLambertMaterial({ color: skinColor });
+                    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.7, 8), shirtMat); body.position.y = 0.35; group.add(body);
+                    const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), skinMat); head.position.y = 0.85; group.add(head);
+                    const armGeo = new THREE.BoxGeometry(0.1, 0.45, 0.1);
+                    const armL = new THREE.Mesh(armGeo, shirtMat); armL.position.set(-0.3, 0.6, 0); armL.rotation.z = 0.5; group.add(armL);
+                    const armR = new THREE.Mesh(armGeo, shirtMat); armR.position.set(0.3, 0.6, 0); armR.rotation.z = -0.5; group.add(armR);
+                    return group;
+                };
+                for(let i=0; i<60; i++) {
+                    const color = fanColors[Math.floor(Math.random()*fanColors.length)];
+                    const fan = createFan(color);
+                    fan.position.set((Math.random()-0.5)*30, 0, -7 - Math.random()*4);
+                    fan.position.y = 1 + (Math.abs(fan.position.z) - 7) * 0.5; 
+                    fan.userData = { baseY: fan.position.y, jumpSpeed: Math.random() * 0.005 + 0.005, jumpOffset: Math.random() * Math.PI };
+                    crowdGroup.add(fan);
+                }
+                scene.add(crowdGroup);
+
+                const goalGroup = new THREE.Group();
+                const postMat = new THREE.MeshStandardMaterial({ color: 0xdddddd });
+                const miniW = 1.5; const miniH = 1.0;
+                const postGeo = new THREE.CylinderGeometry(0.08, 0.08, miniH);
+                const leftPost = new THREE.Mesh(postGeo, postMat); leftPost.position.set(-miniW/2, miniH/2, 0); leftPost.castShadow = true; goalGroup.add(leftPost);
+                const rightPost = new THREE.Mesh(postGeo, postMat); rightPost.position.set(miniW/2, miniH/2, 0); rightPost.castShadow = true; goalGroup.add(rightPost);
+                const crossbar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, miniW + 0.16), postMat); crossbar.rotation.z = Math.PI / 2; crossbar.position.set(0, miniH, 0); crossbar.castShadow = true; goalGroup.add(crossbar);
+                const netGeo = new THREE.PlaneGeometry(miniW, miniH);
+                const netMat = new THREE.MeshBasicMaterial({ color: 0xeeeeee, wireframe: true, side: THREE.DoubleSide, opacity: 0.3, transparent: true });
+                const net = new THREE.Mesh(netGeo, netMat); net.position.set(0, miniH/2, -0.5); goalGroup.add(net);
+                scene.add(goalGroup);
+
+                const bootGeo = new THREE.BoxGeometry(0.4, 0.3, 0.8);
+                const bootMat = new THREE.MeshStandardMaterial({ color: playerSettings.colorHex });
+                const playerBoot = new THREE.Mesh(bootGeo, bootMat);
+                playerBoot.position.set(0.5, 0.2, 9.5);
+                playerBoot.rotation.y = -0.2;
+                playerBoot.castShadow = true;
+                scene.add(playerBoot);
+
+                const ballRadius = 0.22;
+                const ballGeo = new THREE.SphereGeometry(ballRadius, 32, 32);
+                const ballMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+                const ball = new THREE.Mesh(ballGeo, ballMat);
+                ball.castShadow = true;
+                ball.position.set(0, ballRadius, 7);
+                scene.add(ball);
+
+                let ballVel = new THREE.Vector3();
+                let isShooting = false;
+                let gravity = -0.018;
+                let shotCb = null;
+                let currentShooter = 'player'; 
+                let bounceState = 'none';
+                
+                const resetScene = () => {
+                    isShooting = false;
+                    ball.position.set(0, ballRadius, 7);
+                    ball.rotation.set(0,0,0);
+                    ballVel.set(0,0,0);
+                    bounceState = 'none';
+                    camera.position.set(0, 1.7, 10);
+                    camera.lookAt(0, 0.5, 0);
+                    playerBoot.visible = true;
+                    playerBoot.position.set(0.5, 0.2, 7.5);
+                };
+
+                const updateBootColor = (colorHex) => {
+                    playerBoot.material.color.setHex(colorHex);
+                };
+
+                const shootBall = (tx, ty, powerPerc, shooter, cb) => {
+                    isShooting = true;
+                    shotCb = cb;
+                    currentShooter = shooter;
+                    playerBoot.visible = false; 
+                    bounceState = 'none';
+                    const speed = 0.25 + (powerPerc / 250);
+                    const dx = tx - 0; const dy = ty - ballRadius; const dz = 0 - 7;
+                    const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                    ballVel.set( (dx / dist) * speed, (dy / dist) * speed + (0.05 * (powerPerc/50)), (dz / dist) * speed );
+                };
+
+                gameRef.current = { resetScene, shootBall, updateBootColor };
+
+                const animate = () => {
+                    requestAnimationFrame(animate);
+                    const time = Date.now();
+                    crowdGroup.children.forEach(fan => {
+                        fan.position.y = fan.userData.baseY + Math.sin(time * 0.008 + fan.userData.jumpOffset) * 0.15;
+                        fan.rotation.y = Math.sin(time * 0.005 + fan.userData.jumpOffset) * 0.2;
+                    });
+
+                    if (isShooting) {
+                        ball.position.add(ballVel);
+                        ballVel.y += gravity;
+                        if (ball.position.y < ballRadius) {
+                            ball.position.y = ballRadius;
+                            ballVel.y *= -0.6; ballVel.z *= 0.9;
+                            if (bounceState === 'none') {
+                                const inX = Math.abs(ball.position.x) <= zoneWidth / 2;
+                                const inZ = ball.position.z >= 0 && ball.position.z <= zoneDepth;
+                                bounceState = (inX && inZ) ? 'valid' : 'invalid';
+                            }
+                        }
+                        if (ball.position.z < 0.2 && ball.position.z > -0.5 && shotCb) {
+                            const bx = ball.position.x; const by = ball.position.y;
+                            const isInsideGoal = bx > -miniW/2 && bx < miniW/2 && by < miniH && by > 0;
+                            let res = 'miss';
+                            if (isInsideGoal) res = (bounceState === 'invalid') ? 'bounce_fail' : 'goal';
+                            if (res === 'goal') ballVel.multiplyScalar(0.2);
+                            if (isInsideGoal || by > miniH || Math.abs(bx) > miniW/2 + 0.5) {
+                                if(shotCb) { shotCb(res, currentShooter); shotCb = null; }
+                            }
+                        }
+                        ball.rotation.x += ballVel.z; ball.rotation.z -= ballVel.x;
+                    }
+                    renderer.render(scene, camera);
+                };
+                animate();
+
+                const handleResize = () => {
+                    if (!container) return;
+                    camera.aspect = container.clientWidth / container.clientHeight;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(container.clientWidth, container.clientHeight);
+                };
+                window.addEventListener('resize', handleResize);
+                return () => { window.removeEventListener('resize', handleResize); if(container) container.innerHTML = ''; };
+
+            }, [currentRound]); 
+
+            return (
+                <div className="relative w-full h-screen bg-slate-900 overflow-hidden select-none font-sans text-white">
+                    <div 
+                        ref={sceneRef} 
+                        className="absolute inset-0 z-0" 
+                        onMouseDown={handleInteractStart} 
+                        onMouseMove={handleInteractMove} 
+                        onMouseUp={handleInteractEnd}
+                        onTouchStart={handleInteractStart}
+                        onTouchMove={handleInteractMove}
+                        onTouchEnd={handleInteractEnd}
+                    />
+
+                    {/* MENÜ */}
+                    {gameState === 'menu' && (
+                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                            <div className="text-center mb-8">
+                                <h1 className="text-5xl md:text-6xl font-black text-orange-500 tracking-tighter mb-2">TOPRAK KORT</h1>
+                                <h2 className="text-2xl text-gray-300">PENALTI EFSANESİ</h2>
+                            </div>
+                            <div className="flex gap-4">
+                                <button onClick={() => setGameState('setup')} className="bg-orange-600 hover:bg-orange-500 text-white p-4 md:p-6 rounded-2xl flex flex-col items-center gap-2 transition hover:scale-105 min-w-[120px]">
+                                    <Play size={40} />
+                                    <span className="font-bold text-xl">BAŞLA</span>
+                                </button>
+                                <button onClick={() => setGameState('market')} className="bg-slate-700 hover:bg-slate-600 text-white p-4 md:p-6 rounded-2xl flex flex-col items-center gap-2 transition hover:scale-105 min-w-[120px]">
+                                    <ShoppingBag size={40} />
+                                    <span className="font-bold text-xl">APO MARKET</span>
+                                    <span className="text-sm text-yellow-400">{money} TL</span>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* MARKET */}
+                    {gameState === 'market' && (
+                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900 overflow-auto py-8">
+                            <div className="w-full max-w-4xl p-4 md:p-8">
+                                <div className="flex justify-between items-center mb-8">
+                                    <h2 className="text-3xl md:text-4xl font-bold flex items-center gap-3"><ShoppingBag /> APO MARKET</h2>
+                                    <div className="bg-slate-800 px-4 py-2 rounded-full flex items-center gap-2 border border-yellow-500/50">
+                                        <Coins className="text-yellow-400" /> <span className="text-xl md:text-2xl font-bold">{money} TL</span>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+                                    {boots.map(b => (
+                                        <div key={b.id} className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                                            <div className="h-20 md:h-24 bg-black/20 rounded-lg mb-2 flex items-center justify-center">
+                                                <div className="w-10 h-5 md:w-12 md:h-6 rounded bg-current" style={{color: b.color ? '#' + b.color.toString(16) : '#fff'}}></div>
+                                            </div>
+                                            <div className="font-bold text-sm md:text-base">{b.name}</div>
+                                            <div className="text-xs text-gray-400 mb-2">F: {b.curve}x | G: {b.power}x</div>
+                                            {inventory.includes(b.id) ? (
+                                                <button onClick={() => equipBoot(b.id)} className={`w-full py-2 rounded font-bold text-sm ${equippedBoot===b.id ? 'bg-green-600' : 'bg-slate-600'}`}>
+                                                    {equippedBoot===b.id ? 'GİYİLDİ' : 'GİY'}
+                                                </button>
+                                            ) : (
+                                                <button onClick={() => buyBoot(b)} disabled={money < b.price} className="w-full bg-yellow-500 text-black py-2 rounded font-bold text-sm disabled:opacity-50">
+                                                    {b.price} TL
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                                <button onClick={() => setGameState('menu')} className="mt-8 text-gray-400 hover:text-white mx-auto flex items-center gap-2 bg-slate-800 px-6 py-2 rounded-full"><X /> KAPAT</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* SETUP */}
+                    {gameState === 'setup' && (
+                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/95 p-4">
+                            <div className="bg-slate-800 p-8 rounded-2xl w-full max-w-md">
+                                <h2 className="text-2xl font-bold mb-6 text-center">TAKIMINI OLUŞTUR</h2>
+                                <form onSubmit={handleSetupComplete}>
+                                    <div className="mb-4">
+                                        <label className="block text-gray-400 mb-2">Takım Adı</label>
+                                        <input name="teamName" defaultValue="Yıldızlar FC" className="w-full bg-slate-900 p-3 rounded border border-slate-700 text-white" />
+                                    </div>
+                                    <div className="mb-6">
+                                        <label className="block text-gray-400 mb-2">Forma Rengi</label>
+                                        <input name="teamColor" type="color" defaultValue="#00ff00" className="w-full h-12 rounded cursor-pointer border-none" />
+                                    </div>
+                                    <button type="submit" className="w-full bg-green-500 hover:bg-green-400 text-white font-bold py-3 rounded text-lg">MAÇA GİT</button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* SİMÜLASYON */}
+                    {gameState === 'simulation' && (
+                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/95 p-4">
+                            <div className="w-full max-w-2xl">
+                                <div className="flex justify-between items-center mb-6 px-4">
+                                    <div className="text-center">
+                                        <div className="text-2xl md:text-3xl font-bold text-orange-400">{playerSettings.name}</div>
+                                        <div className="text-5xl md:text-6xl font-mono">{simScore.p}</div>
+                                    </div>
+                                    <div className="text-xl font-bold text-gray-500">VS</div>
+                                    <div className="text-center">
+                                        <div className="text-2xl md:text-3xl font-bold text-red-400">{teams[currentRound].name}</div>
+                                        <div className="text-5xl md:text-6xl font-mono">{simScore.c}</div>
+                                    </div>
+                                </div>
+                                <div id="sim-logs" className="bg-slate-900 h-64 overflow-y-auto p-4 rounded-xl border border-slate-700 mb-6 font-mono text-sm space-y-2">
+                                    {simLogs.map((log, i) => (
+                                        <div key={i} className="flex gap-4 border-b border-white/5 pb-1">
+                                            <span className="text-yellow-500 font-bold w-12">{log.time}</span>
+                                            <span className={log.text.includes('GOL') ? 'text-green-400 font-bold' : 'text-gray-300'}>{log.text}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                {isSimFinished && (
+                                    <button onClick={startPenalties} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-4 rounded-xl text-xl animate-pulse flex items-center justify-center gap-2">
+                                        PENALTILARA BAŞLA <Play />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* OYUN HUD */}
+                    {gameState === 'penalty' && (
+                        <>
+                            <div className="absolute top-4 left-2 right-2 flex justify-between items-center bg-slate-900/90 px-4 py-2 rounded-2xl border border-white/20 shadow-2xl z-40">
+                                <div className="text-right">
+                                    <div className="text-[10px] md:text-xs font-bold truncate max-w-[80px]" style={{color: playerSettings.color}}>{playerSettings.name}</div>
+                                    <div className="text-2xl md:text-4xl font-mono font-bold text-green-400">{scores.player}</div>
+                                </div>
+                                <div className="flex flex-col items-center">
+                                    <div className="bg-white/20 px-3 py-1 rounded-full text-[10px] md:text-xs font-bold whitespace-nowrap">
+                                        {shotCount > 5 ? 'UZATMA' : `Penaltı ${shotCount}/5`}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="text-[10px] md:text-xs text-gray-400 uppercase font-bold truncate max-w-[80px]">{teams[currentRound].name}</div>
+                                    <div className="text-2xl md:text-4xl font-mono font-bold text-red-400">{scores.cpu}</div>
+                                </div>
+                            </div>
+
+                            {message && (
+                                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-none">
+                                    <h1 className={`text-5xl md:text-7xl font-black italic text-center whitespace-nowrap text-transparent bg-clip-text bg-gradient-to-b ${message === 'GOL!' ? 'from-yellow-300 to-orange-600' : message === 'UZATMA!' ? 'from-blue-300 to-blue-600' : 'from-gray-200 to-gray-500'}`} style={{WebkitTextStroke: '1px black', textShadow: '0 4px 10px rgba(0,0,0,0.5)'}}>
+                                        {message}
+                                    </h1>
+                                </div>
+                            )}
+
+                            {turn === 'player' && canInteract && !message && (
+                                <>
+                                    <div 
+                                        className="absolute w-12 h-12 md:w-16 md:h-16 border-2 border-white rounded-full z-30 pointer-events-none transform -translate-x-1/2 -translate-y-1/2 shadow-[0_0_10px_rgba(255,255,255,0.5)]"
+                                        style={{ 
+                                            left: `${aimPos.x}%`, 
+                                            top: `${aimPos.y}%`,
+                                            borderColor: isCharging ? '#FFFF00' : '#FFFFFF',
+                                            transition: 'width 0.1s, height 0.1s'
+                                        }}
+                                    >
+                                        <div className="absolute top-1/2 left-1/2 w-1 h-1 bg-red-500 rounded-full transform -translate-x-1/2 -translate-y-1/2"></div>
+                                        {isCharging && (
+                                            <svg className="absolute inset-0 w-full h-full -rotate-90">
+                                                <circle cx="50%" cy="50%" r="45%" fill="none" stroke={power > 90 ? '#FF0000' : '#00FF00'} strokeWidth="4" strokeDasharray="100" strokeDashoffset={100 - power} />
+                                            </svg>
+                                        )}
+                                    </div>
+                                    <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2 text-center z-30 pointer-events-none w-full px-4">
+                                        {isCharging ? (
+                                            <div className="text-yellow-400 font-bold text-xl animate-pulse">GÜÇ YÜKLENİYOR... BIRAK!</div>
+                                        ) : (
+                                            <div className="bg-black/50 px-4 py-2 rounded-lg text-white font-medium backdrop-blur-sm text-sm md:text-base">
+                                                Nişan al, <span className="text-yellow-400 font-bold">BASILI TUT</span> ve bırak.
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
+                            
+                            {turn === 'cpu' && !message && (
+                                <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 bg-red-900/80 text-white px-6 py-2 rounded-full font-bold animate-pulse border border-red-500 text-sm md:text-base">
+                                    Rakip {teams[currentRound].name} hazırlanıyor...
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {/* SONUÇ */}
+                    {(gameState === 'result_win' || gameState === 'result_loss' || gameState === 'champion') && (
+                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-4 text-center">
+                            {gameState === 'champion' ? (
+                                championStep === 'ask' ? (
+                                    <div className="bg-slate-800 p-8 rounded-2xl max-w-md w-full border border-slate-700">
+                                        <HelpCircle className="w-20 h-20 text-orange-500 mx-auto mb-6" />
+                                        <h2 className="text-3xl font-bold mb-8">İsminiz Emirkaan mı?</h2>
+                                        <div className="flex gap-4 justify-center">
+                                            <button onClick={() => alert("İsminiz Emirkaan mı?")} className="bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-8 rounded-lg flex-1">EVET</button>
+                                            <button onClick={() => setChampionStep('won')} className="bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-8 rounded-lg flex-1">HAYIR</button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <Trophy className="w-32 h-32 md:w-40 md:h-40 text-yellow-400 mb-6 mx-auto animate-bounce" />
+                                        <h2 className="text-5xl md:text-6xl font-black text-yellow-400 mb-4">ŞAMPİYON!</h2>
+                                        <p className="text-xl md:text-2xl text-white mb-10">Tebrikler, kupayı alabilirsiniz!</p>
+                                        <button onClick={() => { setGameState('menu'); setChampionStep('ask'); }} className="bg-white text-black font-bold py-3 px-10 rounded-full text-xl">ANA MENÜ</button>
+                                    </div>
+                                )
+                            ) : (
+                                <>
+                                    {gameState === 'result_win' ? <Award className="w-32 h-32 text-green-400 mb-4 mx-auto" /> : <Shield className="w-32 h-32 text-red-500 mb-4 mx-auto" />}
+                                    <h2 className={`text-4xl md:text-5xl font-bold mb-2 ${gameState === 'result_win' ? 'text-green-400' : 'text-red-500'}`}>
+                                        {gameState === 'result_win' ? 'TURU GEÇTİN!' : 'ELENDİN!'}
+                                    </h2>
+                                    <div className="text-3xl mb-8 font-mono bg-white/10 px-8 py-2 rounded-xl inline-block">{scores.player} - {scores.cpu}</div>
+                                    {gameState === 'result_win' ? (
+                                        <button onClick={handleNextStage} className="bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-8 rounded text-xl flex items-center gap-2 mx-auto">SONRAKİ TUR <ChevronRight /></button>
+                                    ) : (
+                                        <button onClick={() => setGameState('menu')} className="bg-white text-black font-bold py-3 px-8 rounded hover:bg-gray-200 mx-auto">ANA MENÜYE DÖN</button>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<ClayCourtSimulation />);
+    </script>
+</body>
+</html>
